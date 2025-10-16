@@ -10,10 +10,10 @@ import {MinHeapLib} from "solady/utils/MinHeapLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
-/// @title KOL - The On-Chain Gauntlet
+/// @title Cypher - The On-Chain Gauntlet
 /// @notice Hyper-optimized, secure, fully on-chain daily guessing game.
 /// @dev Blueprint v2.3 (No-OZ, Solady Optimized). Target Solidity ^0.8.23.
-contract KOLGame is Ownable, ReentrancyGuard {
+contract Cypher is Ownable, ReentrancyGuard {
     using MinHeapLib for *;
 
     // ──────────────────────────────────────────────────────────────────────────

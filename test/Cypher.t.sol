@@ -1,7 +1,7 @@
 pragma solidity ^0.8.23;
 
 import "forge-std/Test.sol";
-import "../src/KOLGame.sol";
+import "../src/Cypher.sol";
 
 // Dummy ERC20 token to simulate USDC in tests.
 contract DummyERC20 {
@@ -68,9 +68,9 @@ contract DummyERC20 {
     }
 }
 
-contract KOLGameTest is Test {
+contract CypherTest is Test {
     DummyERC20 token;
-    KOLGame game;
+    Cypher game;
 
     // Define addresses for players and a finalizer.
     address alice = address(0x1);
@@ -87,7 +87,7 @@ contract KOLGameTest is Test {
     function setUp() public {
         // Deploy dummy USDC token and KOLGame contract
         token = new DummyERC20("Test USDC", "USDC", 6);
-        game = new KOLGame(address(token));
+        game = new Cypher(address(token));
         // Mint initial token balances for each player
         address[6] memory players = [alice, bob, charlie, dave, eve, frank];
         for (uint256 i = 0; i < players.length; i++) {
@@ -105,14 +105,14 @@ contract KOLGameTest is Test {
         assertEq(game.kolCount(), 1);
         // Non-owner should not be able to add KOL
         vm.prank(bob);
-        vm.expectRevert(KOLGame.NotOwner.selector);
+        vm.expectRevert(Cypher.NotOwner.selector);
         game.addKOL(kolHash);
     }
 
     function testNoKOLAvailableReverts() public {
         // No KOL has been added yet, startGame should revert
         vm.prank(alice);
-        vm.expectRevert(KOLGame.NoKOLsAvailable.selector);
+        vm.expectRevert(Cypher.NoKOLsAvailable.selector);
         game.startGame(depositAmount, "guess");
     }
 
@@ -122,7 +122,7 @@ contract KOLGameTest is Test {
         game.addKOL(kolHash);
         // Starting the game with 0 deposit should revert with TransferFailed
         vm.prank(alice);
-        vm.expectRevert(KOLGame.TransferFailed.selector);
+        vm.expectRevert(Cypher.TransferFailed.selector);
         game.startGame(0, "ANSWER");
     }
 
@@ -134,15 +134,15 @@ contract KOLGameTest is Test {
 
         // Expect GameStarted and GameCompleted events
         vm.expectEmit(true, true, false, true);
-        emit KOLGame.GameStarted(0, alice, kolHash);
+        emit Cypher.GameStarted(0, alice, kolHash);
         vm.expectEmit(true, true, false, false);
-        emit KOLGame.GameCompleted(0, alice, 0); // score checked separately
+        emit Cypher.GameCompleted(0, alice, 0); // score checked separately
         vm.prank(alice);
         game.startGame(depositAmount, answer);
 
         // Verify player data after completion
         (
-            KOLGame.Status status,
+            Cypher.Status status,
             bytes32 assignedHash,
             uint256 deposit,
             ,
@@ -150,7 +150,7 @@ contract KOLGameTest is Test {
             uint256 attempts,
             uint256 finalScore
         ) = game.dailyPlayerData(0, alice);
-        assertTrue(status == KOLGame.Status.COMPLETED);
+        assertTrue(status == Cypher.Status.COMPLETED);
         assertEq(assignedHash, kolHash);
         assertEq(deposit, depositAmount);
         assertEq(attempts, 1);
@@ -168,25 +168,25 @@ contract KOLGameTest is Test {
         // Bob starts the game with an incorrect first guess
         vm.startPrank(bob);
         vm.expectEmit(true, true, false, true);
-        emit KOLGame.GameStarted(0, bob, kolHash);
+        emit Cypher.GameStarted(0, bob, kolHash);
         vm.expectEmit(true, true, false, true);
-        emit KOLGame.GuessSubmitted(0, bob, 1);
+        emit Cypher.GuessSubmitted(0, bob, 1);
         game.startGame(depositAmount, "WRONG");
         // After first guess, Bob's game should be active with 1 attempt
-        (KOLGame.Status status, , , , , uint256 attempts, ) = game
+        (Cypher.Status status, , , , , uint256 attempts, ) = game
             .dailyPlayerData(0, bob);
-        assertTrue(status == KOLGame.Status.ACTIVE);
+        assertTrue(status == Cypher.Status.ACTIVE);
         assertEq(attempts, 1);
 
         // Bob now submits the correct guess on the second attempt
         vm.expectEmit(true, true, false, false);
-        emit KOLGame.GameCompleted(0, bob, 0);
+        emit Cypher.GameCompleted(0, bob, 0);
         game.submitGuess(answer);
         vm.stopPrank();
 
         // Verify Bob's game is completed in 2 attempts
         (
-            KOLGame.Status status2,
+            Cypher.Status status2,
             ,
             ,
             ,
@@ -194,13 +194,13 @@ contract KOLGameTest is Test {
             uint256 attempts2,
             uint256 finalScore2
         ) = game.dailyPlayerData(0, bob);
-        assertTrue(status2 == KOLGame.Status.COMPLETED);
+        assertTrue(status2 == Cypher.Status.COMPLETED);
         assertEq(attempts2, 2);
         assertTrue(finalScore2 > 0);
 
         // Bob should not be allowed to start another game on the same day
         vm.prank(bob);
-        vm.expectRevert(KOLGame.AlreadyPlayedToday.selector);
+        vm.expectRevert(Cypher.AlreadyPlayedToday.selector);
         game.startGame(depositAmount, answer);
     }
 
@@ -213,9 +213,9 @@ contract KOLGameTest is Test {
         vm.startPrank(charlie);
         // Start the game with an incorrect guess
         vm.expectEmit(true, true, false, true);
-        emit KOLGame.GameStarted(0, charlie, kolHash);
+        emit Cypher.GameStarted(0, charlie, kolHash);
         vm.expectEmit(true, true, false, true);
-        emit KOLGame.GuessSubmitted(0, charlie, 1);
+        emit Cypher.GuessSubmitted(0, charlie, 1);
         game.startGame(depositAmount, "GUESS1");
         // Submit 7 more incorrect guesses (total 8 attempts)
         string[7] memory guesses = [
@@ -231,10 +231,10 @@ contract KOLGameTest is Test {
             if (i == guesses.length - 1) {
                 // Last guess (8th attempt) - expect GuessSubmitted with attempts=8
                 vm.expectEmit(true, true, false, true);
-                emit KOLGame.GuessSubmitted(0, charlie, 8);
+                emit Cypher.GuessSubmitted(0, charlie, 8);
             } else {
                 vm.expectEmit(true, true, false, true);
-                emit KOLGame.GuessSubmitted(0, charlie, 2 + i);
+                emit Cypher.GuessSubmitted(0, charlie, 2 + i);
             }
             game.submitGuess(guesses[i]);
         }
@@ -242,7 +242,7 @@ contract KOLGameTest is Test {
 
         // After 8 attempts, the game should be marked as FAILED
         (
-            KOLGame.Status status,
+            Cypher.Status status,
             ,
             ,
             ,
@@ -250,13 +250,13 @@ contract KOLGameTest is Test {
             uint256 attempts,
             uint256 finalScore
         ) = game.dailyPlayerData(0, charlie);
-        assertTrue(status == KOLGame.Status.FAILED);
+        assertTrue(status == Cypher.Status.FAILED);
         assertEq(attempts, 8);
         assertEq(finalScore, 0);
 
         // Further guesses after failure should revert
         vm.prank(charlie);
-        vm.expectRevert(KOLGame.GameNotActive.selector);
+        vm.expectRevert(Cypher.GameNotActive.selector);
         game.submitGuess("ANY");
     }
 
@@ -278,11 +278,11 @@ contract KOLGameTest is Test {
         vm.warp(block.timestamp + 1 days);
         // Finalizing with less than 5 completed players should revert
         vm.prank(finalizer);
-        vm.expectRevert(KOLGame.InsufficientPlayers.selector);
+        vm.expectRevert(Cypher.InsufficientPlayers.selector);
         game.finalizeGame(0, players);
         // Claiming reward before finalization should revert
         vm.prank(alice);
-        vm.expectRevert(KOLGame.GameNotFinalized.selector);
+        vm.expectRevert(Cypher.GameNotFinalized.selector);
         game.claimReward(0);
     }
 
@@ -337,21 +337,18 @@ contract KOLGameTest is Test {
 
         // Verify that exactly 5 players completed (Frank failed)
         uint256 completedCount;
-        (KOLGame.Status sAlice, , , , , , ) = game.dailyPlayerData(0, alice);
-        (KOLGame.Status sBob, , , , , , ) = game.dailyPlayerData(0, bob);
-        (KOLGame.Status sCharlie, , , , , , ) = game.dailyPlayerData(
-            0,
-            charlie
-        );
-        (KOLGame.Status sDave, , , , , , ) = game.dailyPlayerData(0, dave);
-        (KOLGame.Status sEve, , , , , , ) = game.dailyPlayerData(0, eve);
-        (KOLGame.Status sFrank, , , , , , ) = game.dailyPlayerData(0, frank);
-        if (sAlice == KOLGame.Status.COMPLETED) completedCount++;
-        if (sBob == KOLGame.Status.COMPLETED) completedCount++;
-        if (sCharlie == KOLGame.Status.COMPLETED) completedCount++;
-        if (sDave == KOLGame.Status.COMPLETED) completedCount++;
-        if (sEve == KOLGame.Status.COMPLETED) completedCount++;
-        if (sFrank == KOLGame.Status.COMPLETED) completedCount++;
+        (Cypher.Status sAlice, , , , , , ) = game.dailyPlayerData(0, alice);
+        (Cypher.Status sBob, , , , , , ) = game.dailyPlayerData(0, bob);
+        (Cypher.Status sCharlie, , , , , , ) = game.dailyPlayerData(0, charlie);
+        (Cypher.Status sDave, , , , , , ) = game.dailyPlayerData(0, dave);
+        (Cypher.Status sEve, , , , , , ) = game.dailyPlayerData(0, eve);
+        (Cypher.Status sFrank, , , , , , ) = game.dailyPlayerData(0, frank);
+        if (sAlice == Cypher.Status.COMPLETED) completedCount++;
+        if (sBob == Cypher.Status.COMPLETED) completedCount++;
+        if (sCharlie == Cypher.Status.COMPLETED) completedCount++;
+        if (sDave == Cypher.Status.COMPLETED) completedCount++;
+        if (sEve == Cypher.Status.COMPLETED) completedCount++;
+        if (sFrank == Cypher.Status.COMPLETED) completedCount++;
         assertEq(completedCount, 5);
 
         // Advance time to next day to enable finalization of gameId 0
@@ -370,7 +367,7 @@ contract KOLGameTest is Test {
         uint256 balanceBeforeFinalizer = token.balanceOf(finalizer);
         vm.startPrank(finalizer);
         vm.expectEmit(true, false, false, true);
-        emit KOLGame.GameFinalized(0, depositAmount, finalizer);
+        emit Cypher.GameFinalized(0, depositAmount, finalizer);
         game.finalizeGame(0, allPlayers);
         vm.stopPrank();
         uint256 balanceAfterFinalizer = token.balanceOf(finalizer);
@@ -403,38 +400,38 @@ contract KOLGameTest is Test {
         uint256 aliceBalanceBefore = token.balanceOf(alice);
         vm.prank(alice);
         vm.expectEmit(true, true, false, true);
-        emit KOLGame.RewardClaimed(0, alice, aliceWinnings);
+        emit Cypher.RewardClaimed(0, alice, aliceWinnings);
         game.claimReward(0);
         uint256 aliceBalanceAfter = token.balanceOf(alice);
         assertEq(aliceBalanceAfter - aliceBalanceBefore, aliceWinnings);
         // Alice cannot claim again
         vm.prank(alice);
-        vm.expectRevert(KOLGame.NoWinningsToClaim.selector);
+        vm.expectRevert(Cypher.NoWinningsToClaim.selector);
         game.claimReward(0);
 
         // Bob claims his reward (expect RewardClaimed event)
         uint256 bobBalanceBefore = token.balanceOf(bob);
         vm.prank(bob);
         vm.expectEmit(true, true, false, true);
-        emit KOLGame.RewardClaimed(0, bob, bobWinnings);
+        emit Cypher.RewardClaimed(0, bob, bobWinnings);
         game.claimReward(0);
         uint256 bobBalanceAfter = token.balanceOf(bob);
         assertEq(bobBalanceAfter - bobBalanceBefore, bobWinnings);
 
         // A player with no winnings (Charlie) should not be able to claim
         vm.prank(charlie);
-        vm.expectRevert(KOLGame.NoWinningsToClaim.selector);
+        vm.expectRevert(Cypher.NoWinningsToClaim.selector);
         game.claimReward(0);
 
         // FinalizeGame should not be callable again for the same gameId
         vm.prank(finalizer);
-        vm.expectRevert(KOLGame.AlreadyFinalized.selector);
+        vm.expectRevert(Cypher.AlreadyFinalized.selector);
         game.finalizeGame(0, allPlayers);
 
         // Cannot finalize a game that is still ongoing (current day)
         uint256 currentGame = game.currentGameId();
         vm.prank(finalizer);
-        vm.expectRevert(KOLGame.GameCycleNotOver.selector);
+        vm.expectRevert(Cypher.GameCycleNotOver.selector);
         game.finalizeGame(currentGame, allPlayers);
     }
 }
