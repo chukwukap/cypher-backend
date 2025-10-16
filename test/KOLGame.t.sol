@@ -264,7 +264,11 @@ contract KOLGameTest is Test {
         // Add a KOL and have 4 players complete the game (less than MIN_PLAYERS)
         bytes32 kolHash = keccak256(abi.encodePacked("WORD"));
         game.addKOL(kolHash);
-        address[4] memory players = [alice, bob, charlie, dave];
+        address[] memory players = new address[](4);
+        players[0] = alice;
+        players[1] = bob;
+        players[2] = charlie;
+        players[3] = dave;
         for (uint256 i = 0; i < players.length; i++) {
             // Each player guesses correctly on the first attempt
             vm.prank(players[i]);
@@ -272,7 +276,7 @@ contract KOLGameTest is Test {
         }
         // Advance time to next day (gameId 0 is now over)
         vm.warp(block.timestamp + 1 days);
-        // Finalizing with less than 5 players should revert
+        // Finalizing with less than 5 completed players should revert
         vm.prank(finalizer);
         vm.expectRevert(KOLGame.InsufficientPlayers.selector);
         game.finalizeGame(0, players);
@@ -332,15 +336,23 @@ contract KOLGameTest is Test {
         vm.stopPrank();
 
         // Verify that exactly 5 players completed (Frank failed)
-        address[] memory completed = game.completedPlayers(0);
-        assertEq(completed.length, 5);
-        bool frankInCompleted = false;
-        for (uint256 j = 0; j < completed.length; j++) {
-            if (completed[j] == frank) {
-                frankInCompleted = true;
-            }
-        }
-        assertFalse(frankInCompleted);
+        uint256 completedCount;
+        (KOLGame.Status sAlice, , , , , , ) = game.dailyPlayerData(0, alice);
+        (KOLGame.Status sBob, , , , , , ) = game.dailyPlayerData(0, bob);
+        (KOLGame.Status sCharlie, , , , , , ) = game.dailyPlayerData(
+            0,
+            charlie
+        );
+        (KOLGame.Status sDave, , , , , , ) = game.dailyPlayerData(0, dave);
+        (KOLGame.Status sEve, , , , , , ) = game.dailyPlayerData(0, eve);
+        (KOLGame.Status sFrank, , , , , , ) = game.dailyPlayerData(0, frank);
+        if (sAlice == KOLGame.Status.COMPLETED) completedCount++;
+        if (sBob == KOLGame.Status.COMPLETED) completedCount++;
+        if (sCharlie == KOLGame.Status.COMPLETED) completedCount++;
+        if (sDave == KOLGame.Status.COMPLETED) completedCount++;
+        if (sEve == KOLGame.Status.COMPLETED) completedCount++;
+        if (sFrank == KOLGame.Status.COMPLETED) completedCount++;
+        assertEq(completedCount, 5);
 
         // Advance time to next day to enable finalization of gameId 0
         vm.warp(block.timestamp + 1 days);
