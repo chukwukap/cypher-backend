@@ -212,3 +212,108 @@ The frontend will interact with the `Cypher.sol` smart contract via its **ABI**.
       c. **Wallet Disconnected:** If `isConnected` is `false`, render `<ConnectWallet />`.
       d. **Sub-Account Setup:** If `isConnected` but `subAccountAddress` is `null`, render the "Setup Game Session" button.
       e. **Main Game View:** If `subAccountAddress` exists, render the main game layout, passing all necessary state and action functions from the hooks down into the components.
+
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/ui";
+
+@custom-variant dark (&:is(.dark \*));
+
+:root {
+/_ Updated to Cypher dark theme colors _/
+--background: #111827;
+--foreground: #f9fafb;
+--panel-background: #1f2937;
+--accent: #3b82f6;
+--hint-correct: #10b981;
+--hint-close: #f59e0b;
+--hint-wrong: #4b5563;
+--border: #374151;
+--input: #374151;
+--ring: #3b82f6;
+--radius: 0.5rem;
+--sidebar: #1f2937;
+--sidebar-foreground: #f9fafb;
+--sidebar-primary: #3b82f6;
+--sidebar-primary-foreground: #f9fafb;
+--sidebar-accent: #3b82f6;
+--sidebar-accent-foreground: #f9fafb;
+--sidebar-border: #374151;
+--sidebar-ring: #3b82f6;
+}
+
+.dark {
+--background: #1f2937;
+--foreground: #f9fafb;
+--panel-background: #111827;
+--accent: #f9fafb;
+--hint-correct: #f9fafb;
+--hint-close: #f9fafb;
+--hint-wrong: #f9fafb;
+--border: #f9fafb;
+--input: #f9fafb;
+--ring: #f9fafb;
+--sidebar: #111827;
+--sidebar-foreground: #f9fafb;
+--sidebar-primary: #f9fafb;
+--sidebar-primary-foreground: #1f2937;
+--sidebar-accent: #f9fafb;
+--sidebar-accent-foreground: #1f2937;
+--sidebar-border: #f9fafb;
+--sidebar-ring: #f9fafb;
+}
+
+@theme inline {
+/_ Added JetBrains Mono and Outfit fonts _/
+--font-sans: "Outfit", "Geist", "Geist Fallback";
+--font-mono: "JetBrains Mono", "Geist Mono", "Geist Mono Fallback";
+--color-background: var(--background);
+--color-foreground: var(--foreground);
+--color-panel: var(--panel-background);
+--color-accent: var(--accent);
+--color-hint-correct: var(--hint-correct);
+--color-hint-close: var(--hint-close);
+--color-hint-wrong: var(--hint-wrong);
+--color-border: var(--border);
+--color-input: var(--input);
+--color-ring: var(--ring);
+--radius-sm: calc(var(--radius) - 4px);
+--radius-md: calc(var(--radius) - 2px);
+--radius-lg: var(--radius);
+--radius-xl: calc(var(--radius) + 4px);
+--color-sidebar: var(--sidebar);
+--color-sidebar-foreground: var(--sidebar-foreground);
+--color-sidebar-primary: var(--sidebar-primary);
+--color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+--color-sidebar-accent: var(--sidebar-accent);
+--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+--color-sidebar-border: var(--sidebar-border);
+--color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+
+- {
+  @apply border-border outline-ring/50;
+  }
+  body {
+  @apply bg-background text-foreground;
+  }
+  }
+
+/_ Added flip animation for hint cells _/
+@keyframes flip {
+0% {
+transform: rotateX(0);
+}
+50% {
+transform: rotateX(90deg);
+}
+100% {
+transform: rotateX(0);
+}
+}
+
+.flip-animation {
+animation: flip 0.6s ease-in-out;
+}

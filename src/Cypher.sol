@@ -121,8 +121,9 @@ contract Cypher is Ownable, ReentrancyGuard {
     // ──────────────────────────────────────────────────────────────────────────
 
     /// @notice Push a new KOL hash to the master list.
-    /// @dev onlyOwner via Solady Ownable.
-    function addKOL(bytes32 _kolHash) external onlyOwner {
+    /// @dev Uses custom error `NotOwner()` instead of Solady's `Unauthorized()`.
+    function addKOL(bytes32 _kolHash) external {
+        if (msg.sender != owner()) revert NotOwner();
         kolHashes.push(_kolHash);
     }
 
