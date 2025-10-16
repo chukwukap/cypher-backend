@@ -10,8 +10,8 @@ import {MinHeapLib} from "solady/utils/MinHeapLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
-/// @title Cypher - The On-Chain Gauntlet
-/// @notice Hyper-optimized, secure, fully on-chain daily guessing game.
+/// @title Cypher - The Onchain Gauntlet
+/// @notice Hyper-optimized, secure, fully onchain daily guessing game.
 /// @dev Blueprint v2.3 (No-OZ, Solady Optimized). Target Solidity ^0.8.23.
 contract Cypher is Ownable, ReentrancyGuard {
     using MinHeapLib for *;
@@ -223,7 +223,7 @@ contract Cypher is Ownable, ReentrancyGuard {
     // ──────────────────────────────────────────────────────────────────────────
 
     /// @notice Finalize a past gameId (yesterday or earlier), compute winners & payouts.
-    /// @dev Caller provides `allPlayers` to avoid on-chain iteration over unknown player set.
+    /// @dev Caller provides `allPlayers` to avoid onchain looping over unknown player set.
     ///      Uses Min-Heap to find the cutoff score for the top 40% without fully sorting.
     /// @param gameId The gameId to finalize.
     /// @param allPlayers A list of players who participated (ACTIVE/COMPLETED/FAILED).
