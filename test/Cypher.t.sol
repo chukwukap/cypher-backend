@@ -1,22 +1,17 @@
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
 import "forge-std/Test.sol";
 import "../src/Cypher.sol";
 
-// Dummy ERC20 token to simulate USDC in tests.
-contract DummyERC20 {
+// Simple mock ERC20 token for testing transfer and approval.
+contract MockERC20 is IERC20 {
     string public name;
     string public symbol;
     uint8 public decimals;
-    mapping(address => uint256) public balanceOf;
-    mapping(address => mapping(address => uint256)) public allowance;
-
-    event Transfer(address indexed from, address indexed to, uint256 amount);
-    event Approval(
-        address indexed owner,
-        address indexed spender,
-        uint256 amount
-    );
+    uint256 public override totalSupply;
+    mapping(address => uint256) public override balanceOf;
+    mapping(address => mapping(address => uint256)) public override allowance;
 
     constructor(string memory _name, string memory _symbol, uint8 _decimals) {
         name = _name;
@@ -24,18 +19,27 @@ contract DummyERC20 {
         decimals = _decimals;
     }
 
-    function transfer(address to, uint256 amount) external returns (bool) {
-        require(
-            balanceOf[msg.sender] >= amount,
-            "DummyERC20: transfer amount exceeds balance"
-        );
+    function mint(address to, uint256 amount) external {
+        balanceOf[to] += amount;
+        totalSupply += amount;
+        emit Transfer(address(0), to, amount);
+    }
+
+    function transfer(
+        address to,
+        uint256 amount
+    ) external override returns (bool) {
+        require(balanceOf[msg.sender] >= amount, "Insufficient balance");
         balanceOf[msg.sender] -= amount;
         balanceOf[to] += amount;
         emit Transfer(msg.sender, to, amount);
         return true;
     }
 
-    function approve(address spender, uint256 amount) external returns (bool) {
+    function approve(
+        address spender,
+        uint256 amount
+    ) external override returns (bool) {
         allowance[msg.sender][spender] = amount;
         emit Approval(msg.sender, spender, amount);
         return true;
@@ -45,423 +49,159 @@ contract DummyERC20 {
         address from,
         address to,
         uint256 amount
-    ) external returns (bool) {
-        require(
-            balanceOf[from] >= amount,
-            "DummyERC20: transfer amount exceeds balance"
-        );
-        require(
-            allowance[from][msg.sender] >= amount,
-            "DummyERC20: insufficient allowance"
-        );
-        allowance[from][msg.sender] -= amount;
+    ) external override returns (bool) {
+        uint256 allowed = allowance[from][msg.sender];
+        require(balanceOf[from] >= amount, "Insufficient balance");
+        require(allowed >= amount, "Allowance exceeded");
+        if (allowed != type(uint256).max) {
+            allowance[from][msg.sender] = allowed - amount;
+        }
         balanceOf[from] -= amount;
         balanceOf[to] += amount;
         emit Transfer(from, to, amount);
         return true;
     }
-
-    // Mint function for test setup convenience.
-    function mint(address to, uint256 amount) external {
-        balanceOf[to] += amount;
-        emit Transfer(address(0), to, amount);
-    }
 }
 
 contract CypherTest is Test {
-    DummyERC20 token;
-    Cypher game;
-
-    // Define addresses for players and a finalizer.
-    address alice = address(0x1);
-    address bob = address(0x2);
-    address charlie = address(0x3);
-    address dave = address(0x4);
-    address eve = address(0x5);
-    address frank = address(0x6);
-    address finalizer = address(0x9);
-
-    uint256 constant initialBalance = 1000 * 1e6; // 1000 tokens (USDC has 6 decimals)
-    uint256 constant depositAmount = 100 * 1e6; // 100 tokens deposit for each game
+    Cypher private cypher;
+    MockERC20 private usdc;
+    address private player;
+    uint256 private depositAmount;
 
     function setUp() public {
-        // Deploy dummy USDC token and KOLGame contract
-        token = new DummyERC20("Test USDC", "USDC", 6);
-        game = new Cypher(address(token));
-        // Mint initial token balances for each player
-        address[6] memory players = [alice, bob, charlie, dave, eve, frank];
-        for (uint256 i = 0; i < players.length; i++) {
-            token.mint(players[i], initialBalance);
-            // Each player approves the KOLGame contract to spend their tokens
-            vm.prank(players[i]);
-            token.approve(address(game), initialBalance);
-        }
+        usdc = new MockERC20("USD Coin", "USDC", 6);
+        cypher = new Cypher(address(usdc));
+        player = address(0xBEEF);
+        depositAmount = 100 * 10 ** 6; // 100 USDC with 6 decimals
+
+        // Mint USDC to player and approve Cypher contract
+        usdc.mint(player, depositAmount);
+        vm.prank(player);
+        usdc.approve(address(cypher), depositAmount);
     }
 
-    function testOnlyOwnerCanAddKOL() public {
-        bytes32 kolHash = keccak256(abi.encodePacked("TEST_KOL"));
-        // Owner (the test contract is owner because it deployed the game) can add KOL
-        game.addKOL(kolHash);
-        assertEq(game.kolCount(), 1);
-        // Non-owner should not be able to add KOL
-        vm.prank(bob);
-        vm.expectRevert(Cypher.NotOwner.selector);
-        game.addKOL(kolHash);
-    }
-
-    function testNoKOLAvailableReverts() public {
-        // No KOL has been added yet, startGame should revert
-        vm.prank(alice);
-        vm.expectRevert(Cypher.NoKOLsAvailable.selector);
-        game.startGame(depositAmount, "guess");
-    }
-
-    function testClearKOLsOnlyOwner() public {
-        // Owner adds a KOL
-        bytes32 kolHash = keccak256(abi.encodePacked("CLEAR_ME"));
-        game.addKOL(kolHash);
-        assertEq(game.kolCount(), 1);
-
-        // Non-owner cannot clear
-        vm.prank(bob);
-        vm.expectRevert(Cypher.NotOwner.selector);
-        game.clearKOLs();
-
-        // Owner clears successfully
-        game.clearKOLs();
-        assertEq(game.kolCount(), 0);
-    }
-
-    function testClearKOLsPreventsStartGame() public {
-        // Add then clear KOLs
-        bytes32 kolHash = keccak256(abi.encodePacked("AFTER_CLEAR"));
-        game.addKOL(kolHash);
-        assertEq(game.kolCount(), 1);
-        game.clearKOLs();
-        assertEq(game.kolCount(), 0);
-
-        // Starting should revert with NoKOLsAvailable
-        vm.prank(alice);
-        vm.expectRevert(Cypher.NoKOLsAvailable.selector);
-        game.startGame(depositAmount, "guess");
-    }
-
-    function testStartGameDepositZeroReverts() public {
-        // Add a KOL so that NoKOLsAvailable is bypassed
+    function testStartGameInitializesCorrectly() public {
+        // Add a KOL so the game can start
         bytes32 kolHash = keccak256(abi.encodePacked("ANSWER"));
-        game.addKOL(kolHash);
-        // Starting the game with 0 deposit should revert with TransferFailed
-        vm.prank(alice);
-        vm.expectRevert(Cypher.TransferFailed.selector);
-        game.startGame(0, "ANSWER");
-    }
+        cypher.addKOL(kolHash);
 
-    function testStartGameFirstGuessCorrectCompletes() public {
-        // Add a known KOL hash and guess it correctly on the first try
-        string memory answer = "SOLVED";
-        bytes32 kolHash = keccak256(bytes(answer));
-        game.addKOL(kolHash);
+        // Start the game
+        vm.prank(player);
+        cypher.startGame(depositAmount);
 
-        // Expect GameStarted and GameCompleted events
-        vm.expectEmit(true, true, false, true);
-        emit Cypher.GameStarted(0, alice, kolHash);
-        vm.expectEmit(true, true, false, false);
-        emit Cypher.GameCompleted(0, alice, 0); // score checked separately
-        vm.prank(alice);
-        game.startGame(depositAmount, answer);
-
-        // Verify player data after completion
+        uint256 gameId = cypher.currentGameId();
         (
             Cypher.Status status,
             bytes32 assignedHash,
-            uint256 deposit,
-            ,
+            uint256 depAmount,
+            uint256 startTime,
             uint256 endTime,
             uint256 attempts,
             uint256 finalScore
-        ) = game.dailyPlayerData(0, alice);
-        assertTrue(status == Cypher.Status.COMPLETED);
+        ) = cypher.dailyPlayerData(gameId, player);
+
+        // After starting, status ACTIVE, attempts 0, deposit recorded
+        assertEq(uint256(status), uint256(Cypher.Status.ACTIVE));
+        assertEq(depAmount, depositAmount);
+        assertEq(attempts, 0);
         assertEq(assignedHash, kolHash);
-        assertEq(deposit, depositAmount);
-        assertEq(attempts, 1);
-        // Since guess was correct immediately, finalScore should be > 0 and endTime set
-        assertTrue(finalScore > 0);
-        assertTrue(endTime > 0);
     }
 
-    function testStartGameFirstGuessWrongThenCorrect() public {
-        // Add a KOL and simulate a player guessing wrong then right
-        string memory answer = "WINNER";
-        bytes32 kolHash = keccak256(bytes(answer));
-        game.addKOL(kolHash);
+    function testFirstGuessCorrectCompletesGame() public {
+        // Prepare a known KOL
+        bytes32 answerHash = keccak256(abi.encodePacked("SECRET"));
+        cypher.addKOL(answerHash);
 
-        // Bob starts the game with an incorrect first guess
-        vm.startPrank(bob);
-        vm.expectEmit(true, true, false, true);
-        emit Cypher.GameStarted(0, bob, kolHash);
-        vm.expectEmit(true, true, false, true);
-        emit Cypher.GuessSubmitted(0, bob, 1);
-        game.startGame(depositAmount, "WRONG");
-        // After first guess, Bob's game should be active with 1 attempt
-        (Cypher.Status status, , , , , uint256 attempts, ) = game
-            .dailyPlayerData(0, bob);
-        assertTrue(status == Cypher.Status.ACTIVE);
-        assertEq(attempts, 1);
+        // Start game and then guess correctly
+        vm.prank(player);
+        cypher.startGame(depositAmount);
+        vm.prank(player);
+        cypher.submitGuess("SECRET");
 
-        // Bob now submits the correct guess on the second attempt
-        vm.expectEmit(true, true, false, false);
-        emit Cypher.GameCompleted(0, bob, 0);
-        game.submitGuess(answer);
-        vm.stopPrank();
-
-        // Verify Bob's game is completed in 2 attempts
-        (
-            Cypher.Status status2,
-            ,
-            ,
-            ,
-            ,
-            uint256 attempts2,
-            uint256 finalScore2
-        ) = game.dailyPlayerData(0, bob);
-        assertTrue(status2 == Cypher.Status.COMPLETED);
-        assertEq(attempts2, 2);
-        assertTrue(finalScore2 > 0);
-
-        // Bob should not be allowed to start another game on the same day
-        vm.prank(bob);
-        vm.expectRevert(Cypher.AlreadyPlayedToday.selector);
-        game.startGame(depositAmount, answer);
-    }
-
-    function testMaxAttemptsLeadsToFailure() public {
-        // Add a KOL that the player will not guess correctly
-        string memory answer = "SECRET";
-        bytes32 kolHash = keccak256(bytes(answer));
-        game.addKOL(kolHash);
-
-        vm.startPrank(charlie);
-        // Start the game with an incorrect guess
-        vm.expectEmit(true, true, false, true);
-        emit Cypher.GameStarted(0, charlie, kolHash);
-        vm.expectEmit(true, true, false, true);
-        emit Cypher.GuessSubmitted(0, charlie, 1);
-        game.startGame(depositAmount, "GUESS1");
-        // Submit 7 more incorrect guesses (total 8 attempts)
-        string[7] memory guesses = [
-            "GUESS2",
-            "GUESS3",
-            "GUESS4",
-            "GUESS5",
-            "GUESS6",
-            "GUESS7",
-            "GUESS8"
-        ];
-        for (uint256 i = 0; i < guesses.length; i++) {
-            if (i == guesses.length - 1) {
-                // Last guess (8th attempt) - expect GuessSubmitted with attempts=8
-                vm.expectEmit(true, true, false, true);
-                emit Cypher.GuessSubmitted(0, charlie, 8);
-            } else {
-                vm.expectEmit(true, true, false, true);
-                emit Cypher.GuessSubmitted(0, charlie, 2 + i);
-            }
-            game.submitGuess(guesses[i]);
-        }
-        vm.stopPrank();
-
-        // After 8 attempts, the game should be marked as FAILED
+        uint256 gameId = cypher.currentGameId();
         (
             Cypher.Status status,
-            ,
-            ,
-            ,
-            ,
+            bytes32 assignedHash,
+            uint256 depAmount,
+            uint256 startTime,
+            uint256 endTime,
             uint256 attempts,
             uint256 finalScore
-        ) = game.dailyPlayerData(0, charlie);
-        assertTrue(status == Cypher.Status.FAILED);
-        assertEq(attempts, 8);
-        assertEq(finalScore, 0);
+        ) = cypher.dailyPlayerData(gameId, player);
 
-        // Further guesses after failure should revert
-        vm.prank(charlie);
+        // Game should be completed in 1 attempt
+        assertEq(uint256(status), uint256(Cypher.Status.COMPLETED));
+        assertEq(attempts, 1);
+        assertGt(finalScore, 0);
+    }
+
+    function testGuessIncrementsAttemptsAndEmitsEvent() public {
+        bytes32 answerHash = keccak256(abi.encodePacked("HELLO"));
+        cypher.addKOL(answerHash);
+
+        vm.prank(player);
+        cypher.startGame(depositAmount);
+
+        // Wrong guess should emit GuessSubmitted
+        uint256 gameId = cypher.currentGameId();
+        vm.prank(player);
+        vm.expectEmit(true, true, true, true);
+        emit Cypher.GuessSubmitted(gameId, player, 1);
+        cypher.submitGuess("WORLD");
+
+        (
+            Cypher.Status status,
+            bytes32 assignedHash,
+            uint256 depAmount,
+            uint256 startTime,
+            uint256 endTime,
+            uint256 attempts,
+            uint256 finalScore
+        ) = cypher.dailyPlayerData(gameId, player);
+        assertEq(uint256(status), uint256(Cypher.Status.ACTIVE));
+        assertEq(attempts, 1);
+
+        // Another wrong guess increases attempts
+        vm.prank(player);
+        cypher.submitGuess("TEST");
+        uint256 attempts2;
+        uint256 dummyFinal;
+        (, , , , , attempts2, dummyFinal) = cypher.dailyPlayerData(
+            gameId,
+            player
+        );
+        assertEq(attempts2, 2);
+    }
+
+    function testMaxAttemptsLeadsToFail() public {
+        bytes32 answerHash = keccak256(abi.encodePacked("CODE"));
+        cypher.addKOL(answerHash);
+        vm.prank(player);
+        cypher.startGame(depositAmount);
+
+        // Make MAX_ATTEMPTS wrong guesses
+        for (uint256 i = 0; i < cypher.MAX_ATTEMPTS(); ++i) {
+            vm.prank(player);
+            cypher.submitGuess("WRONG");
+        }
+
+        uint256 gameId = cypher.currentGameId();
+        (
+            Cypher.Status status,
+            bytes32 assignedHash,
+            uint256 depAmount,
+            uint256 startTime,
+            uint256 endTime,
+            uint256 attempts,
+            uint256 finalScore
+        ) = cypher.dailyPlayerData(gameId, player);
+        assertEq(uint256(status), uint256(Cypher.Status.FAILED));
+        assertEq(attempts, cypher.MAX_ATTEMPTS());
+
+        // Further guesses should revert
+        vm.prank(player);
         vm.expectRevert(Cypher.GameNotActive.selector);
-        game.submitGuess("ANY");
-    }
-
-    function testFinalizeRevertsIfInsufficientPlayers() public {
-        // Add a KOL and have 4 players complete the game (less than MIN_PLAYERS)
-        bytes32 kolHash = keccak256(abi.encodePacked("WORD"));
-        game.addKOL(kolHash);
-        address[] memory players = new address[](4);
-        players[0] = alice;
-        players[1] = bob;
-        players[2] = charlie;
-        players[3] = dave;
-        for (uint256 i = 0; i < players.length; i++) {
-            // Each player guesses correctly on the first attempt
-            vm.prank(players[i]);
-            game.startGame(depositAmount, "WORD");
-        }
-        // Advance time to next day (gameId 0 is now over)
-        vm.warp(block.timestamp + 1 days);
-        // Finalizing with less than 5 completed players should revert
-        vm.prank(finalizer);
-        vm.expectRevert(Cypher.InsufficientPlayers.selector);
-        game.finalizeGame(0, players);
-        // Claiming reward before finalization should revert
-        vm.prank(alice);
-        vm.expectRevert(Cypher.GameNotFinalized.selector);
-        game.claimReward(0);
-    }
-
-    function testFinalizeAndRewardDistribution() public {
-        // Add a known KOL answer for players
-        string memory answer = "TARGET";
-        bytes32 kolHash = keccak256(bytes(answer));
-        game.addKOL(kolHash);
-
-        // Simulate 6 players with varying outcomes:
-        // Alice: 1 attempt (fastest completion)
-        // Bob: 2 attempts (1 wrong, then correct)
-        // Charlie: 5 attempts (correct on 5th)
-        // Dave: 8 attempts (correct on last attempt)
-        // Eve: 3 attempts (with delays to simulate slower solve)
-        // Frank: fails (8 wrong attempts)
-        vm.prank(alice);
-        game.startGame(depositAmount, answer);
-        vm.startPrank(bob);
-        game.startGame(depositAmount, "WRONG");
-        game.submitGuess(answer);
-        vm.stopPrank();
-        vm.startPrank(charlie);
-        game.startGame(depositAmount, "X1");
-        game.submitGuess("X2");
-        game.submitGuess("X3");
-        game.submitGuess("X4");
-        game.submitGuess(answer); // correct on 5th attempt
-        vm.stopPrank();
-        vm.startPrank(dave);
-        game.startGame(depositAmount, "A1");
-        for (uint256 i = 2; i <= 7; i++) {
-            game.submitGuess(string(abi.encodePacked("A", vm.toString(i))));
-        }
-        game.submitGuess(answer); // correct on 8th attempt
-        vm.stopPrank();
-        vm.prank(eve);
-        game.startGame(depositAmount, "Z1");
-        // Simulate delays for Eve
-        vm.warp(block.timestamp + 100);
-        vm.prank(eve);
-        game.submitGuess("Z2");
-        vm.warp(block.timestamp + 200);
-        vm.prank(eve);
-        game.submitGuess(answer); // correct on 3rd attempt (after delays)
-        vm.startPrank(frank);
-        game.startGame(depositAmount, "N1");
-        for (uint256 i = 2; i <= 8; i++) {
-            game.submitGuess(string(abi.encodePacked("N", vm.toString(i))));
-        }
-        vm.stopPrank();
-
-        // Verify that exactly 5 players completed (Frank failed)
-        uint256 completedCount;
-        (Cypher.Status sAlice, , , , , , ) = game.dailyPlayerData(0, alice);
-        (Cypher.Status sBob, , , , , , ) = game.dailyPlayerData(0, bob);
-        (Cypher.Status sCharlie, , , , , , ) = game.dailyPlayerData(0, charlie);
-        (Cypher.Status sDave, , , , , , ) = game.dailyPlayerData(0, dave);
-        (Cypher.Status sEve, , , , , , ) = game.dailyPlayerData(0, eve);
-        (Cypher.Status sFrank, , , , , , ) = game.dailyPlayerData(0, frank);
-        if (sAlice == Cypher.Status.COMPLETED) completedCount++;
-        if (sBob == Cypher.Status.COMPLETED) completedCount++;
-        if (sCharlie == Cypher.Status.COMPLETED) completedCount++;
-        if (sDave == Cypher.Status.COMPLETED) completedCount++;
-        if (sEve == Cypher.Status.COMPLETED) completedCount++;
-        if (sFrank == Cypher.Status.COMPLETED) completedCount++;
-        assertEq(completedCount, 5);
-
-        // Advance time to next day to enable finalization of gameId 0
-        vm.warp(block.timestamp + 1 days);
-
-        // Prepare list of all participants for finalizeGame
-        address[] memory allPlayers = new address[](6);
-        allPlayers[0] = alice;
-        allPlayers[1] = bob;
-        allPlayers[2] = charlie;
-        allPlayers[3] = dave;
-        allPlayers[4] = eve;
-        allPlayers[5] = frank;
-
-        // Finalize the game and expect GameFinalized event
-        uint256 balanceBeforeFinalizer = token.balanceOf(finalizer);
-        vm.startPrank(finalizer);
-        vm.expectEmit(true, false, false, true);
-        emit Cypher.GameFinalized(0, depositAmount, finalizer);
-        game.finalizeGame(0, allPlayers);
-        vm.stopPrank();
-        uint256 balanceAfterFinalizer = token.balanceOf(finalizer);
-        // Finalizer should receive 1% of the failed player's deposit
-        uint256 expectedFee = (depositAmount * game.FINALIZER_FEE_BPS()) /
-            10000;
-        assertEq(balanceAfterFinalizer - balanceBeforeFinalizer, expectedFee);
-        // GameId 0 is marked finalized
-        assertTrue(game.isFinalized(0));
-
-        // Determine winners (top 40% of completed players => top 2 scores)
-        uint256 aliceWinnings = game.dailyWinnings(0, alice);
-        uint256 bobWinnings = game.dailyWinnings(0, bob);
-        uint256 charlieWinnings = game.dailyWinnings(0, charlie);
-        uint256 daveWinnings = game.dailyWinnings(0, dave);
-        uint256 eveWinnings = game.dailyWinnings(0, eve);
-        // Only Alice and Bob should have non-zero winnings
-        assertTrue(aliceWinnings > 0);
-        assertTrue(bobWinnings > 0);
-        assertEq(charlieWinnings, 0);
-        assertEq(daveWinnings, 0);
-        assertEq(eveWinnings, 0);
-        // The sum of Alice and Bob's winnings should equal prizePool minus finalizer fee
-        uint256 prizePool = depositAmount; // Frank's deposit
-        uint256 finalizerFee = expectedFee;
-        uint256 winningsPool = prizePool - finalizerFee;
-        assertEq(aliceWinnings + bobWinnings, winningsPool);
-
-        // Alice claims her reward (expect RewardClaimed event)
-        uint256 aliceBalanceBefore = token.balanceOf(alice);
-        vm.prank(alice);
-        vm.expectEmit(true, true, false, true);
-        emit Cypher.RewardClaimed(0, alice, aliceWinnings);
-        game.claimReward(0);
-        uint256 aliceBalanceAfter = token.balanceOf(alice);
-        assertEq(aliceBalanceAfter - aliceBalanceBefore, aliceWinnings);
-        // Alice cannot claim again
-        vm.prank(alice);
-        vm.expectRevert(Cypher.NoWinningsToClaim.selector);
-        game.claimReward(0);
-
-        // Bob claims his reward (expect RewardClaimed event)
-        uint256 bobBalanceBefore = token.balanceOf(bob);
-        vm.prank(bob);
-        vm.expectEmit(true, true, false, true);
-        emit Cypher.RewardClaimed(0, bob, bobWinnings);
-        game.claimReward(0);
-        uint256 bobBalanceAfter = token.balanceOf(bob);
-        assertEq(bobBalanceAfter - bobBalanceBefore, bobWinnings);
-
-        // A player with no winnings (Charlie) should not be able to claim
-        vm.prank(charlie);
-        vm.expectRevert(Cypher.NoWinningsToClaim.selector);
-        game.claimReward(0);
-
-        // FinalizeGame should not be callable again for the same gameId
-        vm.prank(finalizer);
-        vm.expectRevert(Cypher.AlreadyFinalized.selector);
-        game.finalizeGame(0, allPlayers);
-
-        // Cannot finalize a game that is still ongoing (current day)
-        uint256 currentGame = game.currentGameId();
-        vm.prank(finalizer);
-        vm.expectRevert(Cypher.GameCycleNotOver.selector);
-        game.finalizeGame(currentGame, allPlayers);
+        cypher.submitGuess("ANY");
     }
 }

@@ -1,18 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Imports (as specified)
-// ──────────────────────────────────────────────────────────────────────────────
 import {Ownable} from "solady/auth/Ownable.sol";
 import {ReentrancyGuard} from "solady/utils/ReentrancyGuard.sol";
 import {MinHeapLib} from "solady/utils/MinHeapLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
-/// @title Cypher - The Onchain Gauntlet
-/// @notice Hyper-optimized, secure, fully onchain daily guessing game.
-/// @dev Blueprint v2.3 (No-OZ, Solady Optimized). Target Solidity ^0.8.23.
+/// @title Cypher - The Onchain guessing game
+
 contract Cypher is Ownable, ReentrancyGuard {
     using MinHeapLib for *;
 
@@ -138,13 +134,9 @@ contract Cypher is Ownable, ReentrancyGuard {
     // Gameplay
     // ──────────────────────────────────────────────────────────────────────────
 
-    /// @notice Start the game for the current 24h cycle with an initial guess.
-    /// @param _usdcAmount Amount of USDC to deposit.
-    /// @param _firstGuess The player's first guess (string), checked immediately.
-    function startGame(
-        uint256 _usdcAmount,
-        string calldata _firstGuess
-    ) external nonReentrant {
+    /// @notice Start the game for the current 24h cycle by depositing USDC.
+    /// @param _usdcAmount Amount of USDC to deposit for playing the game.
+    function startGame(uint256 _usdcAmount) external nonReentrant {
         uint256 gameId = _currentGameId();
 
         PlayerData storage p = dailyPlayerData[gameId][msg.sender];
@@ -160,6 +152,7 @@ contract Cypher is Ownable, ReentrancyGuard {
         p.assignedKOLHash = assigned;
         p.depositAmount = _usdcAmount;
         p.startTime = block.timestamp;
+        p.attempts = 0;
 
         emit GameStarted(gameId, msg.sender, assigned);
 
@@ -170,15 +163,6 @@ contract Cypher is Ownable, ReentrancyGuard {
             _usdcAmount
         );
         if (!ok) revert TransferFailed();
-
-        // If their first guess is immediately correct, complete.
-        if (_isCorrectGuess(assigned, _firstGuess)) {
-            p.attempts = 1;
-            _completeGame(gameId, msg.sender);
-        } else {
-            p.attempts = 1;
-            emit GuessSubmitted(gameId, msg.sender, p.attempts);
-        }
     }
 
     /// @notice Submit a guess for the current day after starting the game.
@@ -206,7 +190,6 @@ contract Cypher is Ownable, ReentrancyGuard {
     /// @dev Private helper to complete the game, compute score, and emit event.
     function _completeGame(uint256 gameId, address playerAddress) private {
         PlayerData storage p = dailyPlayerData[gameId][playerAddress];
-
         if (p.status != Status.ACTIVE) revert GameNotActive();
 
         p.status = Status.COMPLETED;
@@ -221,7 +204,6 @@ contract Cypher is Ownable, ReentrancyGuard {
         p.finalScore = FixedPointMathLib.mulDiv(10_000_000 * 1e18, 1e18, denom);
 
         completedPlayers[gameId].push(playerAddress);
-
         emit GameCompleted(gameId, playerAddress, p.finalScore);
     }
 
@@ -245,17 +227,14 @@ contract Cypher is Ownable, ReentrancyGuard {
         uint256 nCompleted = completed.length;
         if (nCompleted < MIN_PLAYERS) revert InsufficientPlayers();
 
-        isFinalized[gameId] = true; // lock
+        isFinalized[gameId] = true; // lock finalization
 
         // 1) Determine top 40% cutoff via min-heap of size K = ceil(0.4 * nCompleted).
-        uint256 K = (nCompleted * 40 + 99) / 100; // ceil
+        uint256 K = (nCompleted * 40 + 99) / 100; // ceil(0.4 * nCompleted)
         if (K == 0) K = 1;
-
-        MinHeapLib.MemHeap memory heap; // zero-init; no init() required
-
-        // Seed with first K (or nCompleted if smaller).
-        uint256 seed = K < nCompleted ? K : nCompleted;
-        for (uint256 i = 0; i < seed; ) {
+        MinHeapLib.MemHeap memory heap;
+        uint256 seedCount = K < nCompleted ? K : nCompleted;
+        for (uint256 i = 0; i < seedCount; ) {
             address a = completed[i];
             uint256 s = dailyPlayerData[gameId][a].finalScore;
             MinHeapLib.push(heap, s);
@@ -263,44 +242,36 @@ contract Cypher is Ownable, ReentrancyGuard {
                 ++i;
             }
         }
-
-        // Keep only top-K largest values; root holds smallest among current top-K.
-        for (uint256 i = seed; i < nCompleted; ) {
+        for (uint256 i = seedCount; i < nCompleted; ) {
             address a = completed[i];
             uint256 s = dailyPlayerData[gameId][a].finalScore;
-
             if (MinHeapLib.length(heap) < K) {
                 MinHeapLib.push(heap, s);
             } else {
-                uint256 r = MinHeapLib.root(heap);
-                if (s > r) {
-                    // Prefer replaceRoot if present, else emulate via pop()+push().
-                    // If your Solady version lacks `replaceRoot`, uncomment the 2 lines below
-                    // and comment `replaceRoot`.
+                uint256 minScore = MinHeapLib.root(heap);
+                if (s > minScore) {
+                    // If Solady version has replaceRoot:
+                    MinHeapLib.replace(heap, s);
+                    // Otherwise, use pop+push:
                     // heap.pop();
                     // heap.push(s);
-                    MinHeapLib.replace(heap, s);
                 }
             }
             unchecked {
                 ++i;
             }
         }
-
         uint256 cutoffScore = MinHeapLib.root(heap);
 
-        // 2) Build prizePool from FAILED players' deposits provided in `allPlayers`.
+        // 2) Build prizePool from deposits of FAILED players.
         uint256 prizePool;
-        {
-            uint256 len = allPlayers.length;
-            for (uint256 i = 0; i < len; ) {
-                PlayerData storage pd = dailyPlayerData[gameId][allPlayers[i]];
-                if (pd.status == Status.FAILED) {
-                    prizePool += pd.depositAmount;
-                }
-                unchecked {
-                    ++i;
-                }
+        for (uint256 i = 0; i < allPlayers.length; ) {
+            PlayerData storage pd = dailyPlayerData[gameId][allPlayers[i]];
+            if (pd.status == Status.FAILED) {
+                prizePool += pd.depositAmount;
+            }
+            unchecked {
+                ++i;
             }
         }
 
@@ -315,10 +286,9 @@ contract Cypher is Ownable, ReentrancyGuard {
             if (!okFee) revert TransferFailed();
         }
 
-        // 4) Winners: score >= cutoffScore. Sum totalWeightedScore, then distribute.
+        // 4) Distribute winnings to top players (score >= cutoffScore) proportionally.
         uint256 winningsPool = prizePool - finalizerFee;
         uint256 totalWeightedScore;
-
         for (uint256 i = 0; i < nCompleted; ) {
             address a = completed[i];
             uint256 s = dailyPlayerData[gameId][a].finalScore;
@@ -350,7 +320,6 @@ contract Cypher is Ownable, ReentrancyGuard {
                 ++i;
             }
         }
-
         emit GameFinalized(gameId, prizePool, msg.sender);
     }
 
@@ -358,15 +327,11 @@ contract Cypher is Ownable, ReentrancyGuard {
     /// @param gameId The gameId to claim from.
     function claimReward(uint256 gameId) external nonReentrant {
         if (!isFinalized[gameId]) revert GameNotFinalized();
-
         uint256 amt = dailyWinnings[gameId][msg.sender];
         if (amt == 0) revert NoWinningsToClaim();
-
         dailyWinnings[gameId][msg.sender] = 0;
-
         bool ok = USDC_TOKEN.transfer(msg.sender, amt);
         if (!ok) revert TransferFailed();
-
         emit RewardClaimed(gameId, msg.sender, amt);
     }
 
@@ -385,10 +350,7 @@ contract Cypher is Ownable, ReentrancyGuard {
         return kolHashes.length;
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // Internal Utilities
-    // ──────────────────────────────────────────────────────────────────────────
-
+    // Internal utility to get current gameId
     function _currentGameId() internal view returns (uint256) {
         return block.timestamp / 86400;
     }
@@ -403,12 +365,12 @@ contract Cypher is Ownable, ReentrancyGuard {
     function _randomAssignedHash(
         address player
     ) internal view returns (bytes32) {
-        uint256 rnd = uint256(
+        uint256 rand = uint256(
             keccak256(
                 abi.encodePacked(block.timestamp, block.prevrandao, player)
             )
         );
-        uint256 idx = kolHashes.length == 0 ? 0 : rnd % kolHashes.length;
+        uint256 idx = kolHashes.length == 0 ? 0 : rand % kolHashes.length;
         return kolHashes[idx];
     }
 }
