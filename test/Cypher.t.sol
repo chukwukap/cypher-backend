@@ -116,6 +116,36 @@ contract CypherTest is Test {
         game.startGame(depositAmount, "guess");
     }
 
+    function testClearKOLsOnlyOwner() public {
+        // Owner adds a KOL
+        bytes32 kolHash = keccak256(abi.encodePacked("CLEAR_ME"));
+        game.addKOL(kolHash);
+        assertEq(game.kolCount(), 1);
+
+        // Non-owner cannot clear
+        vm.prank(bob);
+        vm.expectRevert(Cypher.NotOwner.selector);
+        game.clearKOLs();
+
+        // Owner clears successfully
+        game.clearKOLs();
+        assertEq(game.kolCount(), 0);
+    }
+
+    function testClearKOLsPreventsStartGame() public {
+        // Add then clear KOLs
+        bytes32 kolHash = keccak256(abi.encodePacked("AFTER_CLEAR"));
+        game.addKOL(kolHash);
+        assertEq(game.kolCount(), 1);
+        game.clearKOLs();
+        assertEq(game.kolCount(), 0);
+
+        // Starting should revert with NoKOLsAvailable
+        vm.prank(alice);
+        vm.expectRevert(Cypher.NoKOLsAvailable.selector);
+        game.startGame(depositAmount, "guess");
+    }
+
     function testStartGameDepositZeroReverts() public {
         // Add a KOL so that NoKOLsAvailable is bypassed
         bytes32 kolHash = keccak256(abi.encodePacked("ANSWER"));
