@@ -117,7 +117,7 @@ contract CypherTest is Test {
         vm.prank(player);
         cypher.startGame(depositAmount);
         vm.prank(player);
-        cypher.submitGuess("SECRET");
+        cypher.submitGuess(keccak256(bytes("SECRET")));
 
         uint256 gameId = cypher.currentGameId();
         (
@@ -148,7 +148,7 @@ contract CypherTest is Test {
         vm.prank(player);
         vm.expectEmit(true, true, true, true);
         emit Cypher.GuessSubmitted(gameId, player, 1);
-        cypher.submitGuess("WORLD");
+        cypher.submitGuess(keccak256(bytes("WORLD")));
 
         (
             Cypher.Status status,
@@ -164,7 +164,7 @@ contract CypherTest is Test {
 
         // Another wrong guess increases attempts
         vm.prank(player);
-        cypher.submitGuess("TEST");
+        cypher.submitGuess(keccak256(bytes("TEST")));
         uint256 attempts2;
         uint256 dummyFinal;
         (, , , , , attempts2, dummyFinal) = cypher.dailyPlayerData(
@@ -183,7 +183,7 @@ contract CypherTest is Test {
         // Make MAX_ATTEMPTS wrong guesses
         for (uint256 i = 0; i < cypher.MAX_ATTEMPTS(); ++i) {
             vm.prank(player);
-            cypher.submitGuess("WRONG");
+            cypher.submitGuess(keccak256(bytes("WRONG")));
         }
 
         uint256 gameId = cypher.currentGameId();
@@ -202,6 +202,6 @@ contract CypherTest is Test {
         // Further guesses should revert
         vm.prank(player);
         vm.expectRevert(Cypher.GameNotActive.selector);
-        cypher.submitGuess("ANY");
+        cypher.submitGuess(keccak256(bytes("ANY")));
     }
 }

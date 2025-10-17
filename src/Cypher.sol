@@ -165,9 +165,9 @@ contract Cypher is Ownable, ReentrancyGuard {
         if (!ok) revert TransferFailed();
     }
 
-    /// @notice Submit a guess for the current day after starting the game.
-    /// @param _guess The guess to check.
-    function submitGuess(string calldata _guess) external {
+    /// @notice Submit a guess hash for the current day after starting the game.
+    /// @param _guessHash keccak256(bytes(guess)) provided by the frontend.
+    function submitGuess(bytes32 _guessHash) external {
         uint256 gameId = _currentGameId();
 
         PlayerData storage p = dailyPlayerData[gameId][msg.sender];
@@ -177,7 +177,7 @@ contract Cypher is Ownable, ReentrancyGuard {
             p.attempts += 1;
         }
 
-        if (_isCorrectGuess(p.assignedKOLHash, _guess)) {
+        if (p.assignedKOLHash == _guessHash) {
             _completeGame(gameId, msg.sender);
         } else {
             if (p.attempts >= MAX_ATTEMPTS) {
@@ -355,12 +355,8 @@ contract Cypher is Ownable, ReentrancyGuard {
         return block.timestamp / 86400;
     }
 
-    function _isCorrectGuess(
-        bytes32 targetHash,
-        string calldata guess
-    ) internal pure returns (bool) {
-        return keccak256(bytes(guess)) == targetHash;
-    }
+    // _isCorrectGuess removed: guesses are now submitted as bytes32 and
+    // compared directly in submitGuess.
 
     function _randomAssignedHash(
         address player
