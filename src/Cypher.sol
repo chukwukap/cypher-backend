@@ -355,9 +355,6 @@ contract Cypher is Ownable, ReentrancyGuard {
         return block.timestamp / 86400;
     }
 
-    // _isCorrectGuess removed: guesses are now submitted as bytes32 and
-    // compared directly in submitGuess.
-
     function _randomAssignedHash(
         address player
     ) internal view returns (bytes32) {
