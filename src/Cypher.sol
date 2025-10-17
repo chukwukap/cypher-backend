@@ -127,6 +127,13 @@ contract Cypher is Ownable, ReentrancyGuard {
         kolHashes.push(_kolHash);
     }
 
+    /// @notice Clear all KOL hashes from the master list.
+    /// @dev Restricted to owner, reverts with `NotOwner()` if unauthorized.
+    function clearKOLs() external {
+        if (msg.sender != owner()) revert NotOwner();
+        delete kolHashes;
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // Gameplay
     // ──────────────────────────────────────────────────────────────────────────
